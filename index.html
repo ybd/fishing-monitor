@@ -251,9 +251,11 @@ select:focus, input[type=date]:focus { border-color: var(--sky); }
 .chip {
   background: var(--teal-dim); color: var(--teal);
   border: 1px solid rgba(0,212,170,.2); border-radius: 5px;
-  padding: 3px 8px; font-size: 11px; font-family: var(--mono); font-weight: 700;
+  padding: 4px 8px; font-size: 11px; font-family: var(--mono); font-weight: 500;
   animation: pop .2s cubic-bezier(.34,1.56,.64,1) both;
+  line-height: 1.4;
 }
+.chip b { font-weight: 800; color: var(--gold); margin-right: 2px; }
 .no-avail { font-size: 11px; color: var(--muted); font-family: var(--mono); padding-top: 2px; }
 .s-ft {
   display: flex; align-items: center; justify-content: space-between;
@@ -343,39 +345,6 @@ input:focus { border-color: var(--teal); }
   transition: .2s;
 }
 .qa-btn:active { transform: scale(.95); }
-
-/* ── POPUP OVERLAY ── */
-.popup-layer {
-  position: fixed; bottom: 70px; left: 14px; right: 14px; z-index: 999;
-  display: flex; flex-direction: column; gap: 8px;
-  pointer-events: none;
-}
-.popup {
-  background: var(--mid);
-  border: 1px solid rgba(0,212,170,.5);
-  border-radius: 16px; padding: 16px;
-  box-shadow: 0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(0,212,170,.1);
-  pointer-events: all;
-  animation: popupIn .35s cubic-bezier(.34,1.56,.64,1);
-  position: relative; overflow: hidden;
-}
-.popup::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--teal), var(--sky));
-}
-@keyframes popupIn { from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
-.pu-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.pu-ttl { font-size: 15px; font-weight: 800; color: var(--teal); }
-.pu-x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 4px; }
-.pu-ship { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
-.pu-dates { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
-.pu-date { background: var(--teal-dim); color: var(--teal); border: 1px solid rgba(0,212,170,.2); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-family: var(--mono); font-weight: 700; }
-.pu-go {
-  width: 100%; padding: 12px; border-radius: 10px;
-  background: var(--teal); color: #031a10;
-  border: none; font-size: 14px; font-weight: 800;
-  font-family: var(--sans); cursor: pointer;
-}
 
 /* install banner */
 .install-bar {
@@ -554,8 +523,6 @@ input:focus { border-color: var(--teal); }
   <button class="bnav-btn" id="nav2" onclick="switchTab(2)"><span class="ni">📋</span>로그</button>
 </div>
 
-<!-- Popup layer -->
-<div class="popup-layer" id="popLayer"></div>
 
 <script>
 // ═══════════════════════════════════════════
@@ -627,6 +594,47 @@ function today() { return new Date().toISOString().slice(0,10); }
 function getMonday() {
   const d = new Date(), day = d.getDay(), diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff); return d.toISOString().slice(0,10);
+}
+
+// ═══════════════════════════════════════════
+// 물때 (TIDE PHASE) 계산
+// 음력 기반 — 삭(new moon)으로부터의 경과일로 산출
+// ═══════════════════════════════════════════
+const SYNODIC_MONTH = 29.530588853; // 삭망월 (일)
+const NEW_MOON_REF = new Date('2025-01-29T00:00:00+09:00'); // 음력 2025-01-01 (설날, 삭)
+
+// 양력 Date → 근사 음력일 (1~30)
+function getLunarDay(date) {
+  const diff = (date.getTime() - NEW_MOON_REF.getTime()) / 86400000;
+  const age = ((diff % SYNODIC_MONTH) + SYNODIC_MONTH) % SYNODIC_MONTH;
+  return Math.floor(age) + 1;
+}
+
+// 음력일 → 물때 (1물~15물)
+// 음력 1일=8물, 9일=1물, 15일=7물(사리), 8일=15물(조금)
+function getMulddae(lunarDay) {
+  return ((lunarDay - 1 + 7) % 15) + 1;
+}
+
+// 물때 → 물흐름 세기 (%)
+// 7물(사리)=100%, 15물(조금)≈0%
+function getFlowStrength(mul) {
+  const dist = Math.min(Math.abs(mul - 7), 15 - Math.abs(mul - 7));
+  return Math.round((Math.cos(dist * Math.PI / 7.5) + 1) / 2 * 100);
+}
+
+// 날짜 라벨 "4월9일(목)" → 물때 정보 문자열 "12물(40%)"
+function getMulddaeLabel(dateLabel) {
+  const pd = parseDateLabel(dateLabel);
+  if (!pd) return '';
+  const yyyymm = getYYYYMM();
+  const year = parseInt(yyyymm.slice(0,4));
+  const dateObj = new Date(year, pd.month - 1, pd.day);
+  if (isNaN(dateObj.getTime())) return '';
+  const lunar = getLunarDay(dateObj);
+  const mul = getMulddae(lunar);
+  const flow = getFlowStrength(mul);
+  return `${mul}물(${flow}%)`;
 }
 
 // ═══════════════════════════════════════════
@@ -862,28 +870,55 @@ function parseAvail(html) {
     const end = i + 1 < allDates.length ? allDates[i+1].pos : text.length;
     const block = text.slice(start, end);
 
-    // [FIX #4] "바로예약" 또는 "남은자리" 가 있으면 가능
-    // 하나의 날짜에 여러 출조시간대가 있을 수 있음 — 하나라도 가능하면 OK
     const hasOpen = block.includes('바로예약') || block.includes('남은자리');
-    // "예약마감"/"대기하기"만 있고 open이 없으면 불가
     const hasClosed = block.includes('예약마감') || block.includes('대기하기');
-
     const dateLabel = allDates[i].label;
 
     if (hasOpen) {
-      // [FIX #3] 날짜 필터 적용
       if (dateInRange(dateLabel)) {
-        avail.push(dateLabel);
+        // 잔여석 파싱: 여러 패턴 시도
+        let remain = 0, total = 0;
+
+        // 패턴1: "남은자리 3석" + "정원 10석"
+        const rms = block.match(/남은자리\s*[:\s]*(\d+)/g);
+        const tms = block.match(/정원\s*[:\s]*(\d+)/g);
+        if (rms) {
+          rms.forEach(m => { const n = m.match(/(\d+)/); if (n) remain += parseInt(n[1]); });
+        }
+        if (tms) {
+          tms.forEach(m => { const n = m.match(/(\d+)/); if (n) total += parseInt(n[1]); });
+        }
+
+        // 패턴2: "3/10" 형태 (패턴1 실패 시)
+        if (!remain && !total) {
+          const ratios = block.match(/(\d+)\s*\/\s*(\d+)/g);
+          if (ratios) {
+            ratios.forEach(r => {
+              const p = r.match(/(\d+)\s*\/\s*(\d+)/);
+              if (p) { remain += parseInt(p[1]); total += parseInt(p[2]); }
+            });
+          }
+        }
+
+        // 물때 계산
+        const mulLabel = getMulddaeLabel(dateLabel);
+
+        avail.push({
+          label: dateLabel,
+          remain: remain,
+          total: total,
+          mulddae: mulLabel,
+        });
       }
     }
 
     // 디버그: 처음 5개 블록 상세
     if (i < 5) {
-      dbg(`  ${dateLabel}: open=${hasOpen}, closed=${hasClosed}, inRange=${dateInRange(dateLabel)}, block="${block.slice(0,80)}..."`);
+      dbg(`  ${dateLabel}: open=${hasOpen}, closed=${hasClosed}, inRange=${dateInRange(dateLabel)}, block="${block.slice(0,120)}..."`);
     }
   }
 
-  dbg(`parseAvail 최종 가능: ${avail.length}개 — ${avail.join(', ')}`);
+  dbg(`parseAvail 최종 가능: ${avail.length}개 — ${avail.map(a=>a.label).join(', ')}`);
   return avail;
 }
 
@@ -923,22 +958,22 @@ async function checkSite(id) {
       dbg(`${site.name}: 404/노데이터 (길이: ${html.length})`);
     } else {
       const avail = parseAvail(html);
+      const availLabels = avail.map(a => a.label);
       const prev = S.prev[id] || new Set();
-      const newDates = avail.filter(d => !prev.has(d));
-      S.prev[id] = new Set(avail);
+      const newDates = availLabels.filter(d => !prev.has(d));
+      S.prev[id] = new Set(availLabels);
       site.errMsg = '';
 
       if (avail.length > 0) {
         site.status = 'found';
-        site.avail = avail;
+        site.avail = avail; // 이제 객체 배열
         if (newDates.length > 0) {
           S.found++;
           addLog('f', `✅ ${site.name}: ${newDates.join(', ')}`, true);
-          showPopup(site, avail);
           playSound();
           updateFoundBanner(site, avail);
         } else {
-          addLog('n', `↺ ${site.name}: 기존 자리 유지 (${avail.join(', ')})`);
+          addLog('n', `↺ ${site.name}: 기존 자리 유지 (${availLabels.join(', ')})`);
         }
       } else {
         site.status = 'none';
@@ -1063,9 +1098,20 @@ const BADGE = {
 
 function renderSiteEl(el, s) {
   const [bc, bt] = BADGE[s.status] || BADGE.idle;
-  const chips = s.avail && s.avail.length > 0
-    ? s.avail.map(d => `<span class="chip">${d}</span>`).join('')
-    : `<span class="no-avail">${s.status==='checking'?'확인 중...':'자리 없음'}</span>`;
+  let chips;
+  if (s.avail && s.avail.length > 0) {
+    chips = s.avail.map(d => {
+      // d가 객체면 새 포맷, 문자열이면 레거시
+      if (typeof d === 'object') {
+        const mul = d.mulddae ? `<b>${d.mulddae}</b> ` : '';
+        const seats = d.total > 0 ? ` (${d.remain}/${d.total})` : (d.remain > 0 ? ` (${d.remain}석)` : '');
+        return `<span class="chip">${mul}${d.label}${seats}</span>`;
+      }
+      return `<span class="chip">${d}</span>`;
+    }).join('');
+  } else {
+    chips = `<span class="no-avail">${s.status==='checking'?'확인 중...':'자리 없음'}</span>`;
+  }
   const ts = s.lastCheck ? s.lastCheck.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '미확인';
   el.className = `scard ${s.status}`;
   el.innerHTML = `
@@ -1123,29 +1169,12 @@ function updateStats() {
 function updateFoundBanner(site, dates) {
   const b = document.getElementById('foundBanner');
   const d = document.getElementById('bannerDates');
-  d.innerHTML = dates.slice(0,6).map(dt =>
-    `<span class="bdate">🚢 ${site.name} ${dt}</span>`
-  ).join('');
+  d.innerHTML = dates.slice(0,6).map(dt => {
+    const label = typeof dt === 'object' ? dt.label : dt;
+    const mul = (typeof dt === 'object' && dt.mulddae) ? `${dt.mulddae} ` : '';
+    return `<span class="bdate">${mul}🚢 ${site.name} ${label}</span>`;
+  }).join('');
   b.classList.add('show');
-}
-
-// ═══════════════════════════════════════════
-// POPUP
-// ═══════════════════════════════════════════
-function showPopup(site, dates) {
-  const layer = document.getElementById('popLayer');
-  const el = document.createElement('div');
-  el.className = 'popup';
-  el.innerHTML = `
-    <div class="pu-hd">
-      <div class="pu-ttl">🎯 예약 자리 발견!</div>
-      <button class="pu-x" onclick="this.closest('.popup').remove()">×</button>
-    </div>
-    <div class="pu-ship">${site.emoji} ${site.name}</div>
-    <div class="pu-dates">${dates.slice(0,5).map(d=>`<span class="pu-date">${d}</span>`).join('')}</div>
-    <button class="pu-go" onclick="window.open('${site.url}','_blank')">🔗 지금 예약 페이지 열기</button>`;
-  layer.prepend(el);
-  setTimeout(() => { if (el.parentNode) el.remove(); }, 60000);
 }
 
 // ═══════════════════════════════════════════
